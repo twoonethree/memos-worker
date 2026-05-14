@@ -1,17 +1,10 @@
--- 1. 新增用戶表
-CREATE TABLE users (
+CREATE TABLE tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  name TEXT NOT NULL UNIQUE
 );
 
--- 2. 修改 notes 表 (建議清空舊資料或手動添加欄位)
--- 若要保留資料，請執行: ALTER TABLE notes ADD COLUMN user_id INTEGER DEFAULT 1;
-DROP TABLE IF EXISTS notes;
 CREATE TABLE notes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL, -- 關鍵：關聯用戶
+  id INTEGER PRIMARY KEY,
   content TEXT NOT NULL,
   files TEXT DEFAULT '[]',
   created_at INTEGER NOT NULL,
@@ -20,18 +13,57 @@ CREATE TABLE notes (
   is_favorited INTEGER DEFAULT 0 NOT NULL,
   is_archived INTEGER DEFAULT 0 NOT NULL,
   pics TEXT,
-  videos TEXT DEFAULT '[]',
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  videos TEXT DEFAULT '[]'
 );
 
--- 3. 修改 tags 表也與用戶綁定
-DROP TABLE IF EXISTS tags;
-CREATE TABLE tags (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  name TEXT NOT NULL,
-  UNIQUE(user_id, name),
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+CREATE TABLE note_tags (
+  note_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL,
+  PRIMARY KEY (note_id, tag_id),
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
+
+
+CREATE TABLE nodes (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT,
+  parent_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (parent_id) REFERENCES nodes(id) ON DELETE CASCADE
+);
+-- =============================================
+-- Section 2: Full-Text Search Virtual Table
+-- (This is the only FTS-related statement you need)
+-- =============================================
+--
+CREATE VIRTUAL TABLE notes_fts USING fts5(
+  content,
+  files,
+  content='notes',
+  content_rowid='id'
+);
+
+
+-- =============================================
+-- Section 3: Triggers to keep FTS in sync
+-- =============================================
+
+CREATE TRIGGER notes_after_insert AFTER INSERT ON notes BEGIN
+  INSERT INTO notes_fts(rowid, content, files) VALUES (new.id, new.content, new.files);
+END;
+
+CREATE TRIGGER notes_after_delete AFTER DELETE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, content, files) VALUES ('delete', old.id, old.content, old.files);
+END;
+
+CREATE TRIGGER notes_after_update AFTER UPDATE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, content, files) VALUES ('delete', old.id, old.content, old.files);
+  INSERT INTO notes_fts(rowid, content, files) VALUES (new.id, new.content, new.files);
+END;
+
 
 
